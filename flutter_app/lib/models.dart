@@ -187,6 +187,7 @@ class BodyLog {
   final String? kind;
   final int? minutes;
   final int? kcal;
+  final String? startTime;
 
   const BodyLog({
     required this.type,
@@ -194,6 +195,7 @@ class BodyLog {
     this.kind,
     this.minutes,
     this.kcal,
+    this.startTime,
   });
 
   bool get isWeight => type == 'weight';

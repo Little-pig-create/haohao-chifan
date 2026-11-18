@@ -310,6 +310,167 @@ class _WaterCardState extends State<WaterCard>
   }
 }
 
+/// 全屏饮水印章，用于首页等没有 WaterCard 的快捷入口。
+void showWaterStampOverlay(BuildContext context) {
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  HapticFeedback.mediumImpact();
+  late OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _WaterStampOverlay(
+      onDone: () {
+        if (entry.mounted) entry.remove();
+      },
+    ),
+  );
+  overlay.insert(entry);
+}
+
+class _WaterStampOverlay extends StatefulWidget {
+  final VoidCallback onDone;
+  const _WaterStampOverlay({required this.onDone});
+
+  @override
+  State<_WaterStampOverlay> createState() => _WaterStampOverlayState();
+}
+
+class _WaterStampOverlayState extends State<_WaterStampOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 760),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) widget.onDone();
+      });
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value;
+          final fall = Curves.easeOutCubic.transform((t / .52).clamp(0.0, 1.0));
+          final fade = t < .74 ? 1.0 : (1 - (t - .74) / .26).clamp(0.0, 1.0);
+          final ripple = ((t - .34) / .66).clamp(0.0, 1.0);
+          final scale = t < .52
+              ? 1.65 - .65 * Curves.easeOutCubic.transform(t / .52)
+              : 1.0 + .06 * math.sin((t - .52) / .48 * math.pi);
+          return Center(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (t > .34)
+                  Opacity(
+                    opacity: (1 - ripple) * .55,
+                    child: Transform.scale(
+                      scale: .45 + ripple * 1.7,
+                      child: Container(
+                        width: 84,
+                        height: 84,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF4F7D8A),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Transform.translate(
+                  offset: Offset(0, -46 * (1 - fall)),
+                  child: Transform.rotate(
+                    angle: -.18,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Opacity(
+                        opacity: fade,
+                        child: Container(
+                          key: const ValueKey('water-stamp-overlay'),
+                          width: 84,
+                          height: 84,
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4FBFC)
+                                .withValues(alpha: .97),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF4F7D8A),
+                              width: 2.5,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x2E436670),
+                                blurRadius: 22,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF4F7D8A)
+                                    .withValues(alpha: .45),
+                              ),
+                            ),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.water_drop_rounded,
+                                  size: 23,
+                                  color: Color(0xFF3F6F7C),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  '+1 杯',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF3F6F7C),
+                                  ),
+                                ),
+                                Text(
+                                  '喝水',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.2,
+                                    color: Color(0xFF6E929B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class TipCard extends StatefulWidget {
   const TipCard({super.key});
 

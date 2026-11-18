@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/demo_data.dart';
+import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -17,6 +18,37 @@ class _WeekScreenState extends State<WeekScreen> {
   bool _generating = false;
   bool _adviceBusy = false;
   String? _advice;
+
+  void _recordPlanMeal(AppState state, int day, Meal meal) {
+    final recorded = state
+        .addedFor(day)
+        .any((item) => item.title == meal.title && item.kind == meal.kind);
+    if (recorded) {
+      showToast(context, '这一餐已经记入饮食记录了');
+      return;
+    }
+    final item = AddedMeal(
+      title: meal.title,
+      kind: meal.kind,
+      time: meal.time,
+      kcal: meal.kcal,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fat: meal.fat,
+      image: meal.image,
+    );
+    state.addMeal(day, item);
+    showUndoToast(
+      context,
+      '已记入${meal.kind}：${meal.title}',
+      icon: Icons.playlist_add_check_rounded,
+      onUndo: () {
+        final list = state.addedFor(day);
+        final index = list.indexOf(item);
+        if (index >= 0) state.removeAddedMeal(day, index);
+      },
+    );
+  }
 
   String _localAdvice(AppState state) {
     final day = state.selectedDay;
@@ -236,6 +268,12 @@ class _WeekScreenState extends State<WeekScreen> {
               const SizedBox(height: 13),
               ...meals.asMap().entries.map((entry) {
                 final meal = entry.value;
+                final recorded = state
+                    .addedFor(day)
+                    .any(
+                      (item) =>
+                          item.title == meal.title && item.kind == meal.kind,
+                    );
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Pressable(
@@ -292,6 +330,48 @@ class _WeekScreenState extends State<WeekScreen> {
                                   style: const TextStyle(
                                     fontSize: 10,
                                     color: AppColors.muted,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Pressable(
+                                  onTap: () =>
+                                      _recordPlanMeal(state, day, meal),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: recorded
+                                          ? AppColors.surfaceSoft
+                                          : AppColors.accentSoft,
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          recorded
+                                              ? Icons.check_rounded
+                                              : Icons.playlist_add_rounded,
+                                          size: 12,
+                                          color: recorded
+                                              ? AppColors.muted
+                                              : AppColors.green2,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          recorded ? '已记入饮食记录' : '记入饮食记录',
+                                          style: TextStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: recorded
+                                                ? AppColors.muted
+                                                : AppColors.green2,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],

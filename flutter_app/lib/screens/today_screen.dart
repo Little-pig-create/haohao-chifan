@@ -5,6 +5,7 @@ import '../widgets/calorie_hero.dart';
 import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/sheets.dart';
+import '../widgets/water_tip.dart';
 import 'add_exercise_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -242,8 +243,15 @@ class TodayScreen extends StatelessWidget {
         _QuickActions(
           onMeal: quickMeal,
           onWater: () {
+            final before = state.waterFor(day);
             state.addWater(day);
-            showToast(context, '已记录一杯水', icon: Icons.water_drop_outlined);
+            showWaterStampOverlay(context);
+            showUndoToast(
+              context,
+              '已记录一杯水',
+              icon: Icons.water_drop_outlined,
+              onUndo: () => state.setWater(day, before),
+            );
           },
           onWeight: recordBody,
           onExercise: () => openExerciseQuickLog(context),

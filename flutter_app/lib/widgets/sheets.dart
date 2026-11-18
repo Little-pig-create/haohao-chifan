@@ -1268,7 +1268,7 @@ class _AiLogSheetState extends State<AiLogSheet> {
             minutes: minutes,
             intensity: '中等',
             kcal: kcal,
-            startTime: state.currentTime,
+            startTime: log.startTime ?? state.currentTime,
           ),
         );
         exerciseCount++;
@@ -1879,7 +1879,12 @@ class _AiLogSheetState extends State<AiLogSheet> {
                                 child: Text(
                                   log.isWeight
                                       ? log.summary
-                                      : '${log.kind ?? '运动'} · ${log.minutes ?? 0} 分钟',
+                                      : [
+                                          log.kind ?? '运动',
+                                          if (log.startTime != null)
+                                            '${log.startTime} – ${addMinutesToClock(log.startTime!, log.minutes ?? 0)}',
+                                          '${log.minutes ?? 0} 分钟',
+                                        ].join(' · '),
                                   style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,

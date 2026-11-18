@@ -119,6 +119,39 @@ void showToast(
   overlay.insert(entry);
 }
 
+/// 带「撤销」的底部提示，适合删除、加水等可回退操作。
+void showUndoToast(
+  BuildContext context,
+  String message, {
+  required VoidCallback onUndo,
+  IconData icon = Icons.check_circle_outline,
+}) {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) {
+    showToast(context, message, icon: icon);
+    return;
+  }
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        content: Row(
+          children: [
+            Icon(icon, size: 17, color: AppColors.cream),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        action: SnackBarAction(
+          label: '撤销',
+          textColor: AppColors.accent,
+          onPressed: onUndo,
+        ),
+      ),
+    );
+}
+
 class _TopToast extends StatefulWidget {
   final String message;
   final IconData icon;

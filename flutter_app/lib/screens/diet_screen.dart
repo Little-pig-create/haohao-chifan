@@ -4,6 +4,7 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/date_strip.dart';
+import '../widgets/history_sheet.dart';
 import '../widgets/sheets.dart';
 import '../widgets/water_tip.dart';
 
@@ -20,15 +21,29 @@ class DietScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 108),
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(2, 6, 2, 12),
-          child: Text(
-            '记录每一餐，比只看总热量更容易发现营养缺口。',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: AppColors.muted,
-              height: 1.55,
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 6, 2, 12),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '记录每一餐，比只看总热量更容易发现营养缺口。',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.muted,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconPill(
+                icon: Icons.history_rounded,
+                size: 30,
+                background: Colors.white.withValues(alpha: .7),
+                onTap: () =>
+                    showAppSheet<void>(context, child: const HistoryLogSheet()),
+              ),
+            ],
           ),
         ),
         DateStrip(selected: day, onChanged: state.selectDay),
@@ -107,8 +122,14 @@ class DietScreen extends StatelessWidget {
           targetMl: state.waterTargetMl,
           onSet: (value) => state.setWater(day, value),
           onAdd: () {
+            final before = state.waterFor(day);
             state.addWater(day);
-            showToast(context, '已记录一杯水', icon: Icons.water_drop_outlined);
+            showUndoToast(
+              context,
+              '已记录一杯水',
+              icon: Icons.water_drop_outlined,
+              onUndo: () => state.setWater(day, before),
+            );
           },
         ),
         const SizedBox(height: AppSpacing.gap),
@@ -135,7 +156,12 @@ class DietScreen extends StatelessWidget {
             final index = added.indexOf(item);
             if (index < 0) return;
             state.removeAddedMeal(day, index);
-            showToast(context, '已删除「${item.title}」');
+            showUndoToast(
+              context,
+              '已删除「${item.title}」',
+              icon: Icons.delete_outline_rounded,
+              onUndo: () => state.addMeal(day, item),
+            );
           },
           onEditAddedTime: (item) async {
             final index = added.indexOf(item);

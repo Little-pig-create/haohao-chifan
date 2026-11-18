@@ -62,7 +62,7 @@ class AppState extends ChangeNotifier {
   bool setupChecklistDismissed = false;
 
   final Map<int, Set<int>> _completed = {};
-  final Map<int, List<AddedMeal>> _added = {};
+  final Map<String, List<AddedMeal>> _addedByDate = {};
   final Map<int, List<Meal>> _customMeals = {};
   final Map<int, int> _water = {};
   final Map<String, int> intakeByDate = {};
@@ -208,7 +208,9 @@ class AppState extends ChangeNotifier {
 
   Set<int> completedFor(int day) => _completed[day] ?? <int>{};
 
-  List<AddedMeal> addedFor(int day) => _added[day] ?? const [];
+  List<AddedMeal> addedFor(int day) => addedForDate(dateKeyForDay(day));
+
+  List<AddedMeal> addedForDate(String date) => _addedByDate[date] ?? const [];
 
   List<AddedMeal> addedForKind(int day, String kind) =>
       addedFor(day).where((meal) => meal.kind == kind).toList();
@@ -220,7 +222,7 @@ class AppState extends ChangeNotifier {
       counts[title] = (counts[title] ?? 0) + 1;
     }
 
-    for (final meal in _added.values.expand((items) => items)) {
+    for (final meal in _addedByDate.values.expand((items) => items)) {
       add(meal.title);
     }
     for (var day = 0; day < weekDays.length; day++) {
@@ -451,10 +453,11 @@ class AppState extends ChangeNotifier {
     ).subtract(Duration(days: todayIndex - index));
   }
 
-  String dateKeyForDay(int index) {
-    final date = dateForDay(index);
+  String dateKeyForDate(DateTime date) {
     return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
+
+  String dateKeyForDay(int index) => dateKeyForDate(dateForDay(index));
 
   int? intakeForDay(int index) => intakeByDate[dateKeyForDay(index)];
 
@@ -628,7 +631,11 @@ class AppState extends ChangeNotifier {
   /// 根据最近 14 天体重和摄入给出带护栏的热量调整建议。
   GoalSuggestion? calorieGoalSuggestion() {
     final today = DateTime.now();
-    final cutoff = today.subtract(const Duration(days: 14));
+    final cutoff = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).subtract(const Duration(days: 14));
     final recentWeights = weights.where((item) {
       final date = DateTime.tryParse(item.date);
       return date != null && !date.isBefore(cutoff);
@@ -746,22 +753,19 @@ class AppState extends ChangeNotifier {
   }
 
   void addMeal(int day, AddedMeal meal) {
-    _added
-        .putIfAbsent(day, () => [])
-        .add(
-          meal.time.trim().isEmpty
-              ? AddedMeal(
-                  title: meal.title,
-                  kind: meal.kind,
-                  time: currentTime,
-                  kcal: meal.kcal,
-                  protein: meal.protein,
-                  carbs: meal.carbs,
-                  fat: meal.fat,
-                  image: meal.image,
-                )
-              : meal,
-        );
+    final stored = meal.time.trim().isEmpty
+        ? AddedMeal(
+            title: meal.title,
+            kind: meal.kind,
+            time: currentTime,
+            kcal: meal.kcal,
+            protein: meal.protein,
+            carbs: meal.carbs,
+            fat: meal.fat,
+            image: meal.image,
+          )
+        : meal;
+    _addedByDate.putIfAbsent(dateKeyForDay(day), () => []).add(stored);
     intakeByDate[dateKeyForDay(day)] = consumedFor(day);
     notifyListeners();
     _save();
@@ -775,7 +779,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setAddedMealTime(int day, int index, String time) {
-    final list = _added[day];
+    final list = _addedByDate[dateKeyForDay(day)];
     if (list == null || index < 0 || index >= list.length) return;
     final meal = list[index];
     list[index] = AddedMeal(
@@ -837,7 +841,7 @@ class AppState extends ChangeNotifier {
 
   void copyDay(int from, int to) {
     _completed[to] = {...completedFor(from)};
-    _added[to] = [...addedFor(from)];
+    _addedByDate[dateKeyForDay(to)] = [...addedFor(from)];
     final custom = _customMeals[from];
     if (custom == null || custom.isEmpty) {
       _customMeals.remove(to);
@@ -851,7 +855,7 @@ class AppState extends ChangeNotifier {
   }
 
   void removeAddedMeal(int day, int index) {
-    final list = _added[day];
+    final list = _addedByDate[dateKeyForDay(day)];
     if (list == null || index < 0 || index >= list.length) return;
     list.removeAt(index);
     intakeByDate[dateKeyForDay(day)] = consumedFor(day);
@@ -1318,6 +1322,8 @@ class AppState extends ChangeNotifier {
             '{"items":[{"type":"exercise","kind":"跑步","minutes":30},'
             '{"type":"exercise","kind":"力量训练","minutes":20},'
             '{"type":"weight","kg":65.2}]}。'
+            '如果用户提到“早上/上午/中午/下午/晚上/几点”，给该运动加 "startTime":"HH:mm"；'
+            '早上按 07:30、上午按 09:30、中午按 12:30、下午按 15:30、晚上按 19:30，未提到则省略。'
             '不要返回 kcal，卡路里由应用根据体重和 MET 计算；'
             '用户说“跑了 5 公里”但没有时长时，按常见配速保守估计分钟数。'
             '用户身体信息：${bodyProfileSummary}，只用于判断运动强度和时长，不要复述。',
@@ -1348,8 +1354,16 @@ class AppState extends ChangeNotifier {
         }
         final kind = '${item['kind'] ?? '运动'}';
         final minutes = ((item['minutes'] as num?) ?? 0).round();
+        final startTime = _normalizeClockTime(item['startTime']);
         if (minutes > 0) {
-          logs.add(BodyLog(type: 'exercise', kind: kind, minutes: minutes));
+          logs.add(
+            BodyLog(
+              type: 'exercise',
+              kind: kind,
+              minutes: minutes,
+              startTime: startTime,
+            ),
+          );
         }
       }
       if (logs.isNotEmpty) return logs;
@@ -1361,6 +1375,17 @@ class AppState extends ChangeNotifier {
       rawBody: content,
       model: activeModel ?? activeProvider?.model ?? '',
     );
+  }
+
+  String? _normalizeClockTime(dynamic raw) {
+    final text = '${raw ?? ''}'.trim();
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(text);
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 
   Future<ExerciseType?> analyzeCustomExercise({
@@ -1566,7 +1591,7 @@ class AppState extends ChangeNotifier {
     _completed.clear();
     _customMeals.clear();
     _planVariation = 0;
-    _added.clear();
+    _addedByDate.clear();
     _water.clear();
     intakeByDate.clear();
     favorites
@@ -1688,7 +1713,7 @@ class AppState extends ChangeNotifier {
   void _applyData(Map<String, dynamic> data) {
     _completed.clear();
     _customMeals.clear();
-    _added.clear();
+    _addedByDate.clear();
     _water.clear();
     intakeByDate.clear();
     favorites.clear();
@@ -1788,24 +1813,31 @@ class AppState extends ChangeNotifier {
       );
     }
 
-    final added = data['added'] as Map<String, dynamic>?;
-    if (added != null) {
-      added.forEach((key, value) {
-        _added[int.parse(key)] = (value as List)
+    final addedByDate = data['addedByDate'] as Map<String, dynamic>?;
+    if (addedByDate != null) {
+      addedByDate.forEach((key, value) {
+        _addedByDate[key] = (value as List)
             .map(
-              (item) => AddedMeal(
-                title: item['title'] as String,
-                kind: item['kind'] as String,
-                time: item['time'] as String,
-                kcal: (item['kcal'] as num).toInt(),
-                protein: (item['protein'] as num).toInt(),
-                carbs: (item['carbs'] as num).toInt(),
-                fat: (item['fat'] as num).toInt(),
-                image: item['image'] as String? ?? 'assets/images/food-4.jpg',
-              ),
+              (item) =>
+                  _addedMealFromMap(Map<String, dynamic>.from(item as Map)),
             )
             .toList();
       });
+    } else {
+      // 兼容旧版本：旧数据按周内索引保存，迁移到当前周的日期键。
+      final added = data['added'] as Map<String, dynamic>?;
+      if (added != null) {
+        added.forEach((key, value) {
+          final day = int.tryParse(key);
+          if (day == null) return;
+          _addedByDate[dateKeyForDay(day)] = (value as List)
+              .map(
+                (item) =>
+                    _addedMealFromMap(Map<String, dynamic>.from(item as Map)),
+              )
+              .toList();
+        });
+      }
     }
 
     final weightList = data['weights'] as List?;
@@ -1943,6 +1975,17 @@ class AppState extends ChangeNotifier {
     image: value['image'] as String? ?? 'assets/images/food-4.jpg',
   );
 
+  AddedMeal _addedMealFromMap(Map<String, dynamic> value) => AddedMeal(
+    title: value['title'] as String? ?? '未命名食物',
+    kind: value['kind'] as String? ?? '加餐',
+    time: value['time'] as String? ?? '',
+    kcal: (value['kcal'] as num? ?? 0).toInt(),
+    protein: (value['protein'] as num? ?? 0).toInt(),
+    carbs: (value['carbs'] as num? ?? 0).toInt(),
+    fat: (value['fat'] as num? ?? 0).toInt(),
+    image: value['image'] as String? ?? 'assets/images/food-4.jpg',
+  );
+
   /// 当前全部记录的 JSON 备份，可复制到剪贴板或写入文件。
   String exportJson() => const JsonEncoder.withIndent('  ').convert(_dataMap());
 
@@ -1967,7 +2010,7 @@ class AppState extends ChangeNotifier {
   }
 
   Map<String, dynamic> _dataMap() => <String, dynamic>{
-    'schemaVersion': 2,
+    'schemaVersion': 3,
     'guest': guest,
     'name': name,
     'uid': uid,
@@ -2021,9 +2064,9 @@ class AppState extends ChangeNotifier {
       ),
     ),
     'water': _water.map((key, value) => MapEntry('$key', value)),
-    'added': _added.map(
+    'addedByDate': _addedByDate.map(
       (key, value) => MapEntry(
-        '$key',
+        key,
         value
             .map(
               (item) => {

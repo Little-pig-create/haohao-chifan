@@ -785,7 +785,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                 size: 26,
                                 background: Colors.transparent,
                                 color: const Color(0xFFA8ADA7),
-                                onTap: () => state.removeExercise(entry.id),
+                                onTap: () {
+                                  state.removeExercise(entry.id);
+                                  showUndoToast(
+                                    context,
+                                    '已删除「${entry.kind}」',
+                                    icon: Icons.delete_outline_rounded,
+                                    onUndo: () => state.addExercise(entry),
+                                  );
+                                },
                               ),
                             ],
                           ),

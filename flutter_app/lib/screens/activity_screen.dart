@@ -180,7 +180,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     height: 78,
                     child: TweenAnimationBuilder<double>(
                       tween: Tween(begin: 0, end: stepRatio),
-                      duration: const Duration(milliseconds: 900),
+                      duration: const Duration(milliseconds: 400),
                       curve: Curves.easeOutCubic,
                       builder: (context, value, _) => CustomPaint(
                         painter: _StepRingPainter(value),

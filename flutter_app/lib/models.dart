@@ -86,16 +86,19 @@ class PhotoFoodEstimate {
     required this.fat,
   });
 
-  AddedMeal toAddedMeal({required String kind, required String time}) =>
-      AddedMeal(
-        title: title,
-        kind: kind,
-        time: time,
-        kcal: kcal,
-        protein: protein,
-        carbs: carbs,
-        fat: fat,
-      );
+  AddedMeal toAddedMeal({
+    required String kind,
+    required String time,
+    double portion = 1,
+  }) => AddedMeal(
+    title: title,
+    kind: kind,
+    time: time,
+    kcal: (kcal * portion).round(),
+    protein: (protein * portion).round(),
+    carbs: (carbs * portion).round(),
+    fat: (fat * portion).round(),
+  );
 }
 
 class Ingredient {

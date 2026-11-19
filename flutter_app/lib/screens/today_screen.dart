@@ -1216,7 +1216,8 @@ class _StepsBar extends StatelessWidget {
               tween: Tween(begin: 0, end: value.clamp(0.0, 1.0).toDouble()),
               duration: reduceMotion
                   ? Duration.zero
-                  : const Duration(milliseconds: 700),
+                  // 步数每秒刷新，动画短一点，读数才不会一直"追不上"。
+                  : const Duration(milliseconds: 320),
               curve: Curves.easeOutCubic,
               builder: (context, current, _) => Align(
                 alignment: Alignment.centerLeft,

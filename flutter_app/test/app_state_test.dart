@@ -183,6 +183,38 @@ void main() {
     expect(restored.exercises.single.minutes, 30);
   });
 
+  test('body fat display uses the profile-based estimate', () {
+    final state = AppState()
+      ..completeProfile(
+        name: 'Alex',
+        gender: '男',
+        age: 30,
+        heightCm: 175,
+        weightKg: 70,
+      )
+      ..addWeight(const WeightEntry('2026-11-18', 70, bodyFat: 40));
+
+    expect(state.estimatedBodyFat, isNotNull);
+    expect(state.displayBodyFat, closeTo(state.estimatedBodyFat!, 1e-9));
+    expect(state.bodyFatIsEstimated, isTrue);
+  });
+
+  test('photo estimate scales with the selected portion', () {
+    const estimate = PhotoFoodEstimate(
+      title: '牛肉片',
+      portion: '约100g',
+      kcal: 200,
+      protein: 20,
+      carbs: 4,
+      fat: 12,
+    );
+    final meal = estimate.toAddedMeal(kind: '午餐', time: '12:00', portion: 1.5);
+    expect(meal.kcal, 300);
+    expect(meal.protein, 30);
+    expect(meal.carbs, 6);
+    expect(meal.fat, 18);
+  });
+
   test('calorie suggestion uses recent records', () {
     final state = AppState();
     state.addWeight(const WeightEntry('2026-11-05', 60));

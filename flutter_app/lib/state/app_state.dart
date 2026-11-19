@@ -73,7 +73,10 @@ class AppState extends ChangeNotifier {
   final StepSensor _stepSensor = StepSensor();
   HealthSnapshot health = const HealthSnapshot();
   int? sensorSteps;
-  bool _sensorDriven = false;
+
+  /// Health Connect 今日步数缓存，与手机传感器取较大值后展示。
+  int? _hcSteps;
+  DateTime? _hcStepsDate;
   bool healthBusy = false;
   String? healthError;
 
@@ -439,10 +442,10 @@ class AppState extends ChangeNotifier {
         .toDouble();
   }
 
-  double? get displayBodyFat => latestMeasuredBodyFat ?? estimatedBodyFat;
+  /// 首页优先展示按身高、体重、年龄和性别计算的体脂估算值。
+  double? get displayBodyFat => estimatedBodyFat ?? latestMeasuredBodyFat;
 
-  bool get bodyFatIsEstimated =>
-      latestMeasuredBodyFat == null && estimatedBodyFat != null;
+  bool get bodyFatIsEstimated => estimatedBodyFat != null;
 
   DateTime dateForDay(int index) {
     final now = DateTime.now();
@@ -1510,9 +1513,8 @@ class AppState extends ChangeNotifier {
     final snapshot = await _healthService.connectAndRead();
     health = snapshot;
     healthError = snapshot.error;
-    _sensorDriven = false;
-    if (snapshot.steps == null && sensorSteps != null)
-      _applySensorSteps(sensorSteps!);
+    _rememberHealthConnectSteps(snapshot.steps);
+    _mergeLiveSteps();
     healthBusy = false;
     notifyListeners();
     return healthError;
@@ -1526,9 +1528,8 @@ class AppState extends ChangeNotifier {
     if (snapshot != null) {
       health = snapshot;
       healthError = snapshot.error;
-      _sensorDriven = false;
-      if (snapshot.steps == null && sensorSteps != null)
-        _applySensorSteps(sensorSteps!);
+      _rememberHealthConnectSteps(snapshot.steps);
+      _mergeLiveSteps();
     }
     healthBusy = false;
     notifyListeners();
@@ -1536,19 +1537,38 @@ class AppState extends ChangeNotifier {
 
   bool _stepBusy = false;
 
-  /// 2 秒轮询：只读 Health Connect 的今日步数，失败时保留计步传感器兜底。
+  /// 1 秒轮询：只读 Health Connect 的今日步数，失败时保留计步传感器兜底。
   Future<void> refreshSteps() async {
     if (_stepBusy) return;
     _stepBusy = true;
     final steps = await _healthService.readTodaySteps();
     _stepBusy = false;
     if (steps == null || steps <= 0) return;
-    if (health.steps == steps && health.source == 'Health Connect') return;
-    _applyHealthSteps(steps);
+    _rememberHealthConnectSteps(steps);
+    _mergeLiveSteps();
   }
 
-  void _applyHealthSteps(int value) {
-    _sensorDriven = false;
+  void _rememberHealthConnectSteps(int? steps) {
+    final today = DateTime.now();
+    final day = DateTime(today.year, today.month, today.day);
+    if (_hcStepsDate != day) {
+      _hcStepsDate = day;
+      _hcSteps = null;
+    }
+    final value = steps ?? 0;
+    if (value > (_hcSteps ?? 0)) _hcSteps = value;
+  }
+
+  /// 传感器是实时流，Health Connect 可能滞后；两者取较大值立即上屏，
+  /// 这样手环写入的更高步数不会丢，手机传感器也能秒级跳动。
+  void _mergeLiveSteps() {
+    final sensor = sensorSteps ?? 0;
+    final fromHealth = _hcSteps ?? 0;
+    final value = max(sensor, fromHealth);
+    if (value <= 0) return;
+    final useSensor = sensor >= fromHealth && sensorSteps != null;
+    final source = useSensor ? '手机传感器' : 'Health Connect';
+    if (health.steps == value && health.source == source) return;
     final week = health.week.isEmpty
         ? List<HealthDay>.generate(
             7,
@@ -1571,9 +1591,9 @@ class AppState extends ChangeNotifier {
       );
     }
     health = health.copyWith(
-      connected: true,
+      connected: health.connected || source == 'Health Connect',
       steps: value,
-      source: 'Health Connect',
+      source: source,
       syncedAt: DateTime.now(),
       week: week,
     );
@@ -1669,8 +1689,9 @@ class AppState extends ChangeNotifier {
       // 存储损坏时保留默认值，不让应用卡在启动页
     }
     notifyListeners();
-    await refreshHealth();
-    await _startStepSensor();
+    // 全量健康数据要读 30 天，比较慢；计步传感器同时启动，
+    // 不必等它读完才开始跳动。
+    await Future.wait([refreshHealth(), _startStepSensor()]);
   }
 
   /// 没有 Health Connect 数据时，用手机自带的计步传感器补齐步数。
@@ -1683,31 +1704,7 @@ class AppState extends ChangeNotifier {
 
   void _applySensorSteps(int value) {
     sensorSteps = value;
-    if (health.steps != null && !_sensorDriven) return;
-    _sensorDriven = true;
-    final week = health.week.isEmpty
-        ? List<HealthDay>.generate(
-            7,
-            (index) => HealthDay(
-              date: DateTime.now().subtract(Duration(days: 6 - index)),
-              steps: index == 6 ? value : 0,
-              activeKcal: 0,
-              sleepMinutes: 0,
-            ),
-          )
-        : List<HealthDay>.of(health.week);
-    if (week.isNotEmpty) {
-      final last = week.last;
-      week[week.length - 1] = HealthDay(
-        date: last.date,
-        steps: value,
-        activeKcal: last.activeKcal,
-        sleepMinutes: last.sleepMinutes,
-        heartRate: last.heartRate,
-      );
-    }
-    health = health.copyWith(steps: value, source: '手机传感器', week: week);
-    notifyListeners();
+    _mergeLiveSteps();
   }
 
   void _applyData(Map<String, dynamic> data) {

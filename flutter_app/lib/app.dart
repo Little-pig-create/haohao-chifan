@@ -90,7 +90,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _healthTimer ??= Timer.periodic(const Duration(seconds: 2), (_) {
+    _healthTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       AppScope.of(context).refreshSteps();
     });

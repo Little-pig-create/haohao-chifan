@@ -125,6 +125,10 @@ class HealthService {
 
   final Health _health = Health();
   bool _configured = false;
+  bool? _stepsAuthorized;
+  int? _todayStepsCache;
+  DateTime? _todayStepsCacheDate;
+  DateTime _lastRawFallback = DateTime.fromMillisecondsSinceEpoch(0);
 
   bool get supported =>
       !kIsWeb &&
@@ -158,6 +162,7 @@ class HealthService {
       if (!granted) {
         return const HealthSnapshot(error: '未获得健康数据读取权限');
       }
+      _stepsAuthorized = true;
       return await read();
     } catch (error) {
       return HealthSnapshot(error: _friendly(error));
@@ -173,6 +178,7 @@ class HealthService {
         permissions: List.filled(_types.length, HealthDataAccess.READ),
       );
       if (granted != true) return null;
+      _stepsAuthorized = true;
       return await read();
     } catch (_) {
       return null;
@@ -184,15 +190,32 @@ class HealthService {
     if (!supported) return null;
     try {
       await _ensureConfigured();
-      final granted = await _health.hasPermissions(
-        [HealthDataType.STEPS],
-        permissions: [HealthDataAccess.READ],
-      );
-      if (granted != true) return null;
+      // 权限状态只查一次；否则每次轮询都要多走一次 Health Connect IPC。
+      if (_stepsAuthorized != true) {
+        final granted = await _health.hasPermissions(
+          [HealthDataType.STEPS],
+          permissions: [HealthDataAccess.READ],
+        );
+        _stepsAuthorized = granted == true;
+      }
+      if (_stepsAuthorized != true) return null;
       final now = DateTime.now();
       final midnight = DateTime(now.year, now.month, now.day);
+      if (_todayStepsCacheDate != midnight) {
+        _todayStepsCacheDate = midnight;
+        _todayStepsCache = null;
+        _lastRawFallback = DateTime.fromMillisecondsSinceEpoch(0);
+      }
       final total = await _health.getTotalStepsInInterval(midnight, now);
-      if (total != null && total > 0) return total;
+      if (total != null && total > 0) {
+        _todayStepsCache = total;
+        return total;
+      }
+      // 原始记录兜底比较重，最多每 5 秒做一次，期间复用上一次结果。
+      if (now.difference(_lastRawFallback) < const Duration(seconds: 5)) {
+        return _todayStepsCache ?? total;
+      }
+      _lastRawFallback = now;
       // 某些系统上聚合接口返回 0，但原始 StepsRecord 还在，直接求和兜底。
       final points = await _health.getHealthDataFromTypes(
         startTime: midnight,
@@ -203,7 +226,9 @@ class HealthService {
         0,
         (value, point) => value + _number(point),
       );
-      return sum > 0 ? sum.round() : total;
+      final result = sum > 0 ? sum.round() : total;
+      if (result != null && result > 0) _todayStepsCache = result;
+      return result;
     } catch (_) {
       return null;
     }

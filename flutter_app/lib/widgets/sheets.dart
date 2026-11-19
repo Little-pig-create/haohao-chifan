@@ -666,6 +666,59 @@ class _Stepper extends StatelessWidget {
   }
 }
 
+class _PortionStepper extends StatelessWidget {
+  final double value;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  const _PortionStepper({
+    required this.value,
+    required this.onMinus,
+    required this.onPlus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6F1),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _button(Icons.remove_rounded, onMinus),
+          SizedBox(
+            width: 30,
+            child: Text(
+              '${value.toStringAsFixed(1)}×',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink2,
+              ),
+            ),
+          ),
+          _button(Icons.add_rounded, onPlus),
+        ],
+      ),
+    );
+  }
+
+  Widget _button(IconData icon, VoidCallback onTap) {
+    return Pressable(
+      onTap: onTap,
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: Icon(icon, size: 13, color: AppColors.ink2),
+      ),
+    );
+  }
+}
+
 class DishLibrarySheet extends StatefulWidget {
   final String initialKind;
 
@@ -1019,7 +1072,9 @@ class _AiLogSheetState extends State<AiLogSheet> {
   Uint8List? _photoBytes;
   AddedMeal? _meal;
   List<PhotoFoodEstimate> _photoItems = [];
+  List<double> _photoPortions = [];
   final Set<int> _selectedPhotoItems = {};
+  double _mealPortion = 1;
   List<BodyLog> _bodyLogs = [];
   late String _kind;
   String _time = '';
@@ -1034,9 +1089,11 @@ class _AiLogSheetState extends State<AiLogSheet> {
     (sum, index) =>
         sum +
         (index >= 0 && index < _photoItems.length
-            ? _photoItems[index].kcal
+            ? (_photoItems[index].kcal * _portionAt(index)).round()
             : 0),
   );
+  double _portionAt(int index) =>
+      index >= 0 && index < _photoPortions.length ? _photoPortions[index] : 1;
   String get _primaryLabel {
     if (_photoItems.isNotEmpty) {
       if (_selectedPhotoItems.isEmpty) return '先勾选吃到的食物';
@@ -1086,6 +1143,8 @@ class _AiLogSheetState extends State<AiLogSheet> {
       _rawResponse = null;
       _meal = null;
       _photoItems = [];
+      _photoPortions = [];
+      _mealPortion = 1;
       _selectedPhotoItems.clear();
       _bodyLogs = [];
     });
@@ -1112,6 +1171,7 @@ class _AiLogSheetState extends State<AiLogSheet> {
             _error = '模型没有返回可用的营养结构，换一张更清晰的餐盘照再试。';
           } else {
             _photoItems = items;
+            _photoPortions = List<double>.filled(items.length, 1);
             _selectedPhotoItems.clear();
             if (items.length <= 3) {
               _selectedPhotoItems.addAll(
@@ -1176,6 +1236,8 @@ class _AiLogSheetState extends State<AiLogSheet> {
         _photoBytes = bytes;
         _meal = null;
         _photoItems = [];
+        _photoPortions = [];
+        _mealPortion = 1;
         _selectedPhotoItems.clear();
         _error = null;
         _rawResponse = null;
@@ -1295,27 +1357,33 @@ class _AiLogSheetState extends State<AiLogSheet> {
       var kcal = 0;
       for (final index in selected) {
         final item = _photoItems[index];
-        kcal += item.kcal;
-        state.addMeal(day, item.toAddedMeal(kind: _kind, time: time));
+        final portion = _portionAt(index);
+        kcal += (item.kcal * portion).round();
+        state.addMeal(
+          day,
+          item.toAddedMeal(kind: _kind, time: time, portion: portion),
+        );
       }
       Navigator.of(context).pop('已记录 ${selected.length} 项 · $kcal 千卡');
       return;
     }
     final meal = _meal;
     if (meal == null) return;
+    final portion = _mealPortion;
+    final kcal = (meal.kcal * portion).round();
     state.addMeal(
       day,
       AddedMeal(
         title: meal.title,
         kind: _kind,
         time: _time.isEmpty ? state.currentTime : _time,
-        kcal: meal.kcal,
-        protein: meal.protein,
-        carbs: meal.carbs,
-        fat: meal.fat,
+        kcal: kcal,
+        protein: (meal.protein * portion).round(),
+        carbs: (meal.carbs * portion).round(),
+        fat: (meal.fat * portion).round(),
       ),
     );
-    Navigator.of(context).pop('已记录「${meal.title}」· ${meal.kcal} 千卡');
+    Navigator.of(context).pop('已记录「${meal.title}」· $kcal 千卡');
   }
 
   @override
@@ -1449,6 +1517,7 @@ class _AiLogSheetState extends State<AiLogSheet> {
                                       _photoBytes = null;
                                       _meal = null;
                                       _photoItems = [];
+                                      _photoPortions = [];
                                       _selectedPhotoItems.clear();
                                     }),
                                   ),
@@ -1708,96 +1777,137 @@ class _AiLogSheetState extends State<AiLogSheet> {
                           itemBuilder: (context, index) {
                             final item = _photoItems[index];
                             final active = _selectedPhotoItems.contains(index);
-                            return Pressable(
-                              onTap: () => setState(() {
-                                if (!_selectedPhotoItems.remove(index)) {
-                                  _selectedPhotoItems.add(index);
-                                }
-                              }),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 160),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 7,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: active
-                                      ? Colors.white
-                                      : Colors.white.withValues(alpha: .45),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: active
-                                        ? const Color(0xFFC9DABF)
-                                        : const Color(0xFFE4EDD6),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    AnimatedContainer(
-                                      duration: const Duration(
-                                        milliseconds: 160,
-                                      ),
-                                      width: 20,
-                                      height: 20,
-                                      decoration: BoxDecoration(
-                                        color: active
-                                            ? AppColors.green
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: active
-                                              ? AppColors.green
-                                              : const Color(0xFFBFCDB4),
-                                        ),
-                                      ),
-                                      child: active
-                                          ? const Icon(
-                                              Icons.check_rounded,
-                                              size: 13,
-                                              color: AppColors.cream,
-                                            )
-                                          : null,
+                            final portion = _portionAt(index);
+                            final adjustedKcal = (item.kcal * portion).round();
+                            return Column(
+                              children: [
+                                Pressable(
+                                  onTap: () => setState(() {
+                                    if (!_selectedPhotoItems.remove(index)) {
+                                      _selectedPhotoItems.add(index);
+                                    }
+                                  }),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 160),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 7,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            item.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.ink,
+                                    decoration: BoxDecoration(
+                                      color: active
+                                          ? Colors.white
+                                          : Colors.white.withValues(alpha: .45),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: active
+                                            ? const Color(0xFFC9DABF)
+                                            : const Color(0xFFE4EDD6),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 160,
+                                          ),
+                                          width: 20,
+                                          height: 20,
+                                          decoration: BoxDecoration(
+                                            color: active
+                                                ? AppColors.green
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: active
+                                                  ? AppColors.green
+                                                  : const Color(0xFFBFCDB4),
                                             ),
                                           ),
-                                          if (item.portion.trim().isNotEmpty)
-                                            Text(
-                                              item.portion,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontSize: 8.5,
-                                                color: AppColors.muted,
+                                          child: active
+                                              ? const Icon(
+                                                  Icons.check_rounded,
+                                                  size: 13,
+                                                  color: AppColors.cream,
+                                                )
+                                              : null,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.ink,
+                                                ),
                                               ),
-                                            ),
-                                        ],
-                                      ),
+                                              if (item.portion
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                Text(
+                                                  item.portion,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 8.5,
+                                                    color: AppColors.muted,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '$adjustedKcal 千卡',
+                                          style: const TextStyle(
+                                            fontSize: 9.5,
+                                            color: AppColors.ink2,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '${item.kcal} 千卡',
-                                      style: const TextStyle(
-                                        fontSize: 9.5,
-                                        color: AppColors.ink2,
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 36,
+                                    top: 4,
+                                    bottom: 2,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        '份量 ${portion.toStringAsFixed(1)} 份',
+                                        style: const TextStyle(
+                                          fontSize: 9,
+                                          color: AppColors.muted,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      _PortionStepper(
+                                        value: portion,
+                                        onMinus: () => setState(() {
+                                          _photoPortions[index] = (portion - .5)
+                                              .clamp(.5, 5);
+                                        }),
+                                        onPlus: () => setState(() {
+                                          _photoPortions[index] = (portion + .5)
+                                              .clamp(.5, 5);
+                                        }),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
@@ -1919,13 +2029,47 @@ class _AiLogSheetState extends State<AiLogSheet> {
                       if (_meal != null) ...[
                         Row(
                           children: [
-                            _macroChip('热量', '${_meal!.kcal} kcal'),
+                            _macroChip(
+                              '热量',
+                              '${(_meal!.kcal * _mealPortion).round()} kcal',
+                            ),
                             const SizedBox(width: 5),
-                            _macroChip('蛋白', '${_meal!.protein} g'),
+                            _macroChip(
+                              '蛋白',
+                              '${(_meal!.protein * _mealPortion).round()} g',
+                            ),
                             const SizedBox(width: 5),
-                            _macroChip('碳水', '${_meal!.carbs} g'),
+                            _macroChip(
+                              '碳水',
+                              '${(_meal!.carbs * _mealPortion).round()} g',
+                            ),
                             const SizedBox(width: 5),
-                            _macroChip('脂肪', '${_meal!.fat} g'),
+                            _macroChip(
+                              '脂肪',
+                              '${(_meal!.fat * _mealPortion).round()} g',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            const Text(
+                              '份量',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                            const Spacer(),
+                            _PortionStepper(
+                              value: _mealPortion,
+                              onMinus: () => setState(() {
+                                _mealPortion = (_mealPortion - .5).clamp(.5, 5);
+                              }),
+                              onPlus: () => setState(() {
+                                _mealPortion = (_mealPortion + .5).clamp(.5, 5);
+                              }),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 9),

@@ -45,10 +45,12 @@ class StepSensor {
     _lastValue = prefs.getInt(_lastKey);
     try {
       _sub = Pedometer.stepCountStream.listen(
-        (event) async {
+        (event) {
           final today = _dayKey(DateTime.now());
+          final now = DateTime.now();
           _sinceBoot = event.steps;
           final rebooted = _lastValue != null && event.steps < _lastValue!;
+          var persistBaseline = false;
           if (_baseline == null || _baselineDate != today || rebooted) {
             // 跨天：把上一次读数当基线，补上两次打开之间走的路；
             // 首次使用或重启：从当前读数开始。
@@ -60,19 +62,22 @@ class StepSensor {
                 event.steps >= _lastValue!;
             _baseline = canCarryOver ? _lastValue! : event.steps;
             _baselineDate = today;
-            await prefs.setString(_baseDateKey, today);
-            await prefs.setInt(_baseValueKey, _baseline!);
+            persistBaseline = true;
           }
           _lastValue = event.steps;
           _lastDate = today;
-          final now = DateTime.now();
-          if (now.difference(_lastWrite).inSeconds >= 5) {
-            _lastWrite = now;
-            await prefs.setString(_dateKey, today);
-            await prefs.setInt(_lastKey, event.steps);
-          }
+          // 先把新步数推给界面，落盘放到后面异步做，避免磁盘写入拖慢刷新。
           final value = steps;
           if (value != null) onUpdate(value);
+          if (persistBaseline) {
+            unawaited(prefs.setString(_baseDateKey, today));
+            unawaited(prefs.setInt(_baseValueKey, _baseline!));
+          }
+          if (now.difference(_lastWrite).inSeconds >= 5) {
+            _lastWrite = now;
+            unawaited(prefs.setString(_dateKey, today));
+            unawaited(prefs.setInt(_lastKey, event.steps));
+          }
         },
         onError: (Object e) {
           error = '$e';

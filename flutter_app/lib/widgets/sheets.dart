@@ -3302,7 +3302,7 @@ class _BodyRecordSheetState extends State<BodyRecordSheet> {
                     child: _BodyField(
                       label: '体脂率 (%)',
                       controller: _fat,
-                      hint: '22.1',
+                      hint: '',
                     ),
                   ),
                 ],
